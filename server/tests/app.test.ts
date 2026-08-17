@@ -69,11 +69,13 @@ describe('HTTP contract', () => {
     const original = app.requireWorkspace;
     app.requireWorkspace = async () => ({ id: workspaceId, role: 'OWNER' });
     const token = app.jwt.sign({ sub: '00000000-0000-4000-8000-000000000002', email: 'alex@projectpulse.dev', type: 'access' });
-    const response = await app.inject({ method: 'POST', url: `/api/v1/workspaces/${workspaceId}/ai/stream`, headers: { authorization: `Bearer ${token}`, accept: 'text/event-stream' }, payload: { question: 'Hello!' } });
+    const response = await app.inject({ method: 'POST', url: `/api/v1/workspaces/${workspaceId}/ai/stream`, headers: { authorization: `Bearer ${token}`, accept: 'text/event-stream', origin: 'http://localhost:3000' }, payload: { question: 'Hello!' } });
     app.requireWorkspace = original;
     expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).toContain('text/event-stream');
     expect(response.headers['cache-control']).toBe('no-cache, no-transform');
+    expect(response.headers['access-control-allow-origin']).toBe('http://localhost:3000');
+    expect(response.headers['access-control-allow-credentials']).toBe('true');
     const events = [...response.body.matchAll(/event: (\w+)\ndata: (.+)\nid: (\d+)\n\n/g)];
     expect(events.map((match) => match[1])).toEqual(['start', 'status', 'delta', 'delta', 'delta', 'result', 'done']);
     expect(events.map((match) => Number(match[3]))).toEqual([1, 2, 3, 4, 5, 6, 7]);

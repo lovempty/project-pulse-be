@@ -22,12 +22,21 @@ export async function handleAiStream(app: FastifyInstance, request: FastifyReque
   const interactionType = classifyAiRequest(body);
   const conversational = interactionType !== 'ANALYSIS';
   const source: AiResponseSource = conversational || env.aiMock ? 'SYSTEM' : 'CLAUDE';
+  const requestOrigin = request.headers.origin;
+  const allowedOrigin = requestOrigin && env.corsOrigins.includes(requestOrigin) ? requestOrigin : undefined;
   reply.hijack();
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
     Connection: 'keep-alive',
     'X-Accel-Buffering': 'no',
+    ...(allowedOrigin
+      ? {
+          'Access-Control-Allow-Origin': allowedOrigin,
+          'Access-Control-Allow-Credentials': 'true',
+          Vary: 'Origin',
+        }
+      : {}),
   });
   reply.raw.flushHeaders();
 
