@@ -43,7 +43,44 @@ All domain endpoints are under `/api/v1/workspaces/:workspaceId`. Workspace memb
 
 ## AI assistant and uploads
 
-With `AI_MOCK_MODE=true` or no `OPENAI_API_KEY`, AI routes return deterministic results with the production response shape. With a key configured, only server-derived structured context is sent upstream, output is validated, and requests have a timeout. Files use a local disk adapter in development; implement `StorageAdapter` for an S3-compatible provider without changing HTTP handlers.
+Create an API key in the [Anthropic Console](https://console.anthropic.com/) and configure it only in the backend `.env` file:
+
+```env
+ANTHROPIC_API_KEY=your-server-side-key
+ANTHROPIC_MODEL=claude-sonnet-5
+AI_MOCK_MODE=false
+AI_TIMEOUT_MS=20000
+AI_MAX_OUTPUT_TOKENS=1600
+AI_MAX_CONTEXT_TASKS=250
+```
+
+Never place `ANTHROPIC_API_KEY` in a frontend environment file or call Claude from a browser component. The backend authorizes the workspace and gathers projects, tasks, workload, metrics, and recent activity directly through Prisma. Client-supplied project metrics are never accepted.
+
+Development automatically uses deterministic mock mode when the key is absent. Set `AI_MOCK_MODE=true` to enable it explicitly. Production startup fails when live mode has no key; mock results retain the production response shape and identify their mode as `MOCK`.
+
+Existing intent request:
+
+```bash
+curl -X POST http://localhost:3001/api/v1/workspaces/WORKSPACE_ID/ai/ask \
+  -H "Authorization: Bearer ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"intent":"IDENTIFY_RISKS","projectId":null,"history":[]}'
+```
+
+Custom project-scoped question with follow-up history:
+
+```bash
+curl -X POST http://localhost:3001/api/v1/workspaces/WORKSPACE_ID/ai/ask \
+  -H "Authorization: Bearer ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"question":"Which release task needs attention first?","projectId":"PROJECT_ID","history":[{"role":"USER","content":"Focus on delivery risk."}]}'
+```
+
+`question` takes precedence over `intent`. History supports up to six `USER` or `ASSISTANT` turns. `GET /api/v1/workspaces/:workspaceId/ai/capabilities` reports the configured provider, model, and live/mock mode without revealing credentials.
+
+Claude uses the Messages API with JSON Schema structured output. The server independently validates the result, removes evidence references to entities outside the authorized context, maps upstream failures to safe error codes, and never logs full prompts, questions, context, or responses.
+
+Files use a local disk adapter in development; implement `StorageAdapter` for an S3-compatible provider without changing HTTP handlers.
 
 ## Quality commands
 

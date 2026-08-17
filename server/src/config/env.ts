@@ -11,8 +11,18 @@ const integer = (name: string, fallback: number) => {
   return value;
 };
 
+export function resolveAiMockMode(nodeEnv: string, configuredMode: string | undefined, apiKey: string | undefined) {
+  const explicitlyMocked = configuredMode === 'true';
+  if (nodeEnv === 'production' && !explicitlyMocked && !apiKey?.trim()) {
+    throw new Error('ANTHROPIC_API_KEY is required in production when AI_MOCK_MODE is not true');
+  }
+  return explicitlyMocked || (nodeEnv !== 'production' && !apiKey?.trim());
+}
+
+const nodeEnv = process.env.NODE_ENV ?? 'development';
+
 export const env = {
-  nodeEnv: process.env.NODE_ENV ?? 'development',
+  nodeEnv,
   host: process.env.HOST ?? '0.0.0.0',
   port: integer('PORT', 3001),
   databaseUrl: required('DATABASE_URL'),
@@ -21,10 +31,12 @@ export const env = {
   accessTtl: process.env.ACCESS_TOKEN_TTL ?? '15m',
   refreshTtl: process.env.REFRESH_TOKEN_TTL ?? '30d',
   corsOrigins: (process.env.CORS_ORIGIN ?? 'http://localhost:3000').split(',').map((v) => v.trim()),
-  openAiKey: process.env.OPENAI_API_KEY,
-  openAiModel: process.env.OPENAI_MODEL ?? 'gpt-4.1-mini',
-  aiMock: process.env.AI_MOCK_MODE === 'true' || !process.env.OPENAI_API_KEY,
-  aiTimeoutMs: integer('AI_TIMEOUT_MS', 15000),
+  anthropicKey: process.env.ANTHROPIC_API_KEY?.trim() || undefined,
+  anthropicModel: process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5',
+  aiMock: resolveAiMockMode(nodeEnv, process.env.AI_MOCK_MODE, process.env.ANTHROPIC_API_KEY),
+  aiTimeoutMs: integer('AI_TIMEOUT_MS', 20000),
+  aiMaxOutputTokens: integer('AI_MAX_OUTPUT_TOKENS', 1600),
+  aiMaxContextTasks: integer('AI_MAX_CONTEXT_TASKS', 250),
   uploadDir: process.env.UPLOAD_DIR ?? './uploads',
   maxUploadSize: integer('MAX_UPLOAD_SIZE', 10 * 1024 * 1024),
   cookieSecure: process.env.COOKIE_SECURE === 'true',

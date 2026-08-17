@@ -8,6 +8,10 @@ import {
 } from "../../common/http.js";
 import { askAssistant } from "../ai/service.js";
 import { env } from "../../config/env.js";
+import { buildAiContext } from "../ai/context.service.js";
+import { aiRequestSchema, aiResponseDataSchema } from "../ai/schemas.js";
+import type { AiIntent, AiRequest } from "../ai/types.js";
+import { AppError } from "../../common/errors/app-error.js";
 
 const wid = Type.Object(
   { workspaceId: Type.String({ format: "uuid" }) },
@@ -21,19 +25,6 @@ const analyticsQuery = Type.Object(
   },
   { additionalProperties: false },
 );
-const aiBody = Type.Object(
-  {
-    intent: Type.Union([
-      Type.Literal("SUMMARIZE_PROGRESS"),
-      Type.Literal("IDENTIFY_RISKS"),
-      Type.Literal("RECOMMEND_PRIORITIES"),
-      Type.Literal("GENERATE_WEEKLY_UPDATE"),
-    ]),
-    projectId: Type.Optional(Type.String({ format: "uuid" })),
-  },
-  { additionalProperties: false },
-);
-
 const routes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", app.authenticate);
   app.get(
@@ -275,41 +266,41 @@ const routes: FastifyPluginAsync = async (app) => {
       return paginated(request, items, page, limit, total);
     },
   );
-  const aiHandler = async (request: any) => {
+  const aiHandler = async (request: any, forcedIntent?: AiIntent) => {
     const { id } = await app.requireWorkspace(request);
-    const body = request.body as any;
+    const body = request.body as AiRequest;
+    const aiRequest: AiRequest = forcedIntent ? { ...body, intent: forcedIntent } : body;
+    if (!aiRequest.intent && !aiRequest.question?.trim()) {
+      throw new AppError(400, "AI_PROMPT_REQUIRED", "Provide an intent or question");
+    }
     if (body.projectId)
       await projectInWorkspace(app.prisma, id, body.projectId);
-    const [workspace, projects, tasks] = await app.prisma.$transaction([
-      app.prisma.workspace.findUniqueOrThrow({
-        where: { id },
-        select: { name: true },
-      }),
-      app.prisma.project.findMany({
-        where: { workspaceId: id, id: body.projectId, archivedAt: null },
-        select: { id: true, name: true, status: true, dueDate: true },
-      }),
-      app.prisma.task.findMany({
-        where: { workspaceId: id, projectId: body.projectId, deletedAt: null },
-        select: {
-          title: true,
-          status: true,
-          priority: true,
-          dueDate: true,
-          assignee: { select: { name: true } },
-        },
-        take: 500,
-      }),
-    ]);
-    return data(
-      request,
-      await askAssistant(body.intent, {
-        workspace: workspace.name,
-        projects,
-        tasks,
-      }),
-    );
+    const mode = env.aiMock ? "MOCK" : "LIVE";
+    try {
+      const context = await buildAiContext(app.prisma, id, body.projectId);
+      const result = await askAssistant(aiRequest, context);
+      request.log.info({ workspaceId: id, projectId: body.projectId ?? null, requestMode: body.question ? "CUSTOM_QUESTION" : aiRequest.intent, model: result.metadata.model, aiMode: result.metadata.mode, latencyMs: result.metadata.latencyMs, inputTokens: result.metadata.inputTokens, outputTokens: result.metadata.outputTokens }, "AI assistant request completed");
+      return data(request, result);
+    } catch (error) {
+      request.log.warn({ workspaceId: id, projectId: body.projectId ?? null, requestMode: body.question ? "CUSTOM_QUESTION" : aiRequest.intent, model: env.anthropicModel, aiMode: mode, code: error instanceof AppError ? error.code : "AI_UPSTREAM_ERROR" }, "AI assistant request failed");
+      throw error;
+    }
   };
+  app.get(
+    "/ai/capabilities",
+    {
+      schema: {
+        tags: ["AI"],
+        params: wid,
+        security: [{ bearerAuth: [] }],
+        response: { 200: Type.Object({ data: Type.Object({ provider: Type.Literal("ANTHROPIC"), model: Type.String(), mode: Type.Union([Type.Literal("LIVE"), Type.Literal("MOCK")]), supportsCustomQuestions: Type.Boolean(), supportsProjectFiltering: Type.Boolean(), supportsFollowUps: Type.Boolean() }), meta: Type.Any() }) },
+      },
+    },
+    async (request) => {
+      await app.requireWorkspace(request);
+      return data(request, { provider: "ANTHROPIC", model: env.anthropicModel, mode: env.aiMock ? "MOCK" : "LIVE", supportsCustomQuestions: true, supportsProjectFiltering: true, supportsFollowUps: true });
+    },
+  );
   app.post(
     "/ai/ask",
     {
@@ -317,11 +308,12 @@ const routes: FastifyPluginAsync = async (app) => {
         tags: ["AI"],
         params: wid,
         security: [{ bearerAuth: [] }],
-        body: aiBody,
+        body: aiRequestSchema,
+        response: { 200: Type.Object({ data: aiResponseDataSchema, meta: Type.Any() }) },
       },
       config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
     },
-    aiHandler,
+    async (request) => aiHandler(request),
   );
   app.post(
     "/ai/weekly-update",
@@ -331,18 +323,17 @@ const routes: FastifyPluginAsync = async (app) => {
         params: wid,
         security: [{ bearerAuth: [] }],
         body: Type.Object(
-          { projectId: Type.Optional(Type.String({ format: "uuid" })) },
+          { projectId: Type.Optional(Type.Union([Type.String({ format: "uuid" }), Type.Null()])), history: Type.Optional(aiRequestSchema.properties.history) },
           { additionalProperties: false },
         ),
+        response: { 200: Type.Object({ data: aiResponseDataSchema, meta: Type.Any() }) },
       },
       config: { rateLimit: { max: 5, timeWindow: "1 minute" } },
     },
     async (request) => {
-      (request.body as any).intent = "GENERATE_WEEKLY_UPDATE";
-      return aiHandler(request);
+      return aiHandler(request, "GENERATE_WEEKLY_UPDATE");
     },
   );
-  if (env.aiMock)
-    app.log.warn("AI assistant is running in deterministic mock mode");
+  app.log[env.aiMock ? "warn" : "info"]({ provider: "ANTHROPIC", model: env.anthropicModel, mode: env.aiMock ? "MOCK" : "LIVE" }, `AI assistant is running in ${env.aiMock ? "deterministic mock" : "live Claude"} mode`);
 };
 export default routes;
