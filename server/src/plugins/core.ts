@@ -16,7 +16,9 @@ import { AppError, forbidden } from '../common/errors/app-error.js';
 import { LocalStorageAdapter } from '../modules/attachments/storage.js';
 
 export default fp(async (app) => {
-  const prisma = new PrismaClient();
+  // Pass the validated URL explicitly. Prisma otherwise reads DATABASE_URL
+  // independently and can miss server/.env when the app starts from the repo root.
+  const prisma = new PrismaClient({ datasourceUrl: env.databaseUrl });
   app.decorate('prisma', prisma);
   app.addHook('onClose', async () => prisma.$disconnect());
   await app.register(cors, { origin: env.corsOrigins, credentials: true });

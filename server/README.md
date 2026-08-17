@@ -4,17 +4,26 @@ Production-oriented Fastify 5 and TypeScript backend for ProjectPulse. It provid
 
 ## Local setup
 
-Requirements: Node.js 20+, npm, Docker, and Docker Compose.
+Requirements: Node.js 20+, npm, and a Supabase project.
 
 ```bash
 cp .env.example .env
-docker compose up -d postgres
 npm install
 npm run prisma:generate
-npm run prisma:migrate
+npx prisma migrate deploy
 npm run prisma:seed
 npm run dev
 ```
+
+In the Supabase dashboard, open the project and click **Connect**. Set
+`DATABASE_URL` to the **Session pooler** URI for application traffic and
+`DIRECT_URL` to the **Direct connection** URI for migrations. Replace the
+password placeholders, URL-encoding special characters in the password. Both
+URLs stay on the backend; Supabase browser keys are not used by Prisma.
+
+If the direct endpoint is unreachable from an IPv4-only development network,
+run migrations from an IPv6-capable network or use the pooler connection that
+the Supabase dashboard recommends for Prisma tooling.
 
 The API is available at `http://localhost:3001`; development Swagger UI is at `http://localhost:3001/docs`. Health probes are `/health` and `/ready`.
 

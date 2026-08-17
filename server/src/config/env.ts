@@ -15,7 +15,7 @@ export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   host: process.env.HOST ?? '0.0.0.0',
   port: integer('PORT', 3001),
-  databaseUrl: required('DATABASE_URL', 'postgresql://projectpulse:projectpulse@localhost:5432/projectpulse?schema=public'),
+  databaseUrl: required('DATABASE_URL'),
   accessSecret: required('JWT_ACCESS_SECRET', 'development-access-secret-change-me-32-chars'),
   refreshSecret: required('JWT_REFRESH_SECRET', 'development-refresh-secret-change-me-32-chars'),
   accessTtl: process.env.ACCESS_TOKEN_TTL ?? '15m',

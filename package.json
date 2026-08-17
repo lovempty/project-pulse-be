@@ -1,15 +1,15 @@
 {
   "name": "project-pulse-be",
   "version": "1.0.0",
-  "description": "This project was bootstrapped with Fastify-CLI.",
-  "main": "app.js",
+  "description": "ProjectPulse backend",
+  "main": "server/dist/server.js",
   "directories": {
     "test": "test"
   },
   "scripts": {
-    "test": "node --test test/**/*.test.js",
-    "start": "fastify start -l info app.js",
-    "dev": "fastify start -w -l info -P app.js",
+    "test": "npm --prefix server test",
+    "start": "npm --prefix server start",
+    "dev": "npm --prefix server run dev",
     "server:dev": "npm --prefix server run dev",
     "server:build": "npm --prefix server run build",
     "server:test": "npm --prefix server test",
