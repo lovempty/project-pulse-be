@@ -6,6 +6,8 @@ export function createMockResult(context: AiContext): AiResult {
   const urgent = context.tasks.filter((task) => task.status !== 'DONE' && task.priority === 'URGENT');
   const firstRisk = overdue[0] ?? urgent[0];
   return {
+    responseType: 'ANALYSIS',
+    responseSource: 'SYSTEM',
     summary: `${context.workspace.name} has ${context.metrics.completedTasks} completed tasks and ${context.metrics.openTasks} open tasks in scope.`,
     highlights: context.metrics.completedTasks ? [`${context.metrics.completedTasks} tasks are complete.`] : ['Delivery work is currently in progress.'],
     risks: overdue.length ? [`${overdue.length} overdue tasks in the analyzed context require attention.`] : ['No overdue tasks were detected in the analyzed context.'],

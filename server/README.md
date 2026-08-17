@@ -78,6 +78,46 @@ curl -X POST http://localhost:3001/api/v1/workspaces/WORKSPACE_ID/ai/ask \
 
 `question` takes precedence over `intent`. History supports up to six `USER` or `ASSISTANT` turns. `GET /api/v1/workspaces/:workspaceId/ai/capabilities` reports the configured provider, model, and live/mock mode without revealing credentials.
 
+Obvious greetings, gratitude, and help questions are classified deterministically. They return concise `CONVERSATIONAL` responses with `responseSource: "SYSTEM"`, empty analytical sections, and zero token usage. They do not query workspace context or call Claude. Questions that combine a greeting with project analysis remain `ANALYSIS` requests. Existing intent requests remain backward compatible and add only `responseType` and `responseSource` fields.
+
+### Streaming AI responses
+
+Use an authenticated streaming `fetch()` request. Browser `EventSource` is not suitable because this endpoint requires a POST body and bearer token.
+
+```bash
+curl -N \
+  -X POST \
+  http://localhost:3001/api/v1/workspaces/WORKSPACE_ID/ai/stream \
+  -H "Authorization: Bearer ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d '{"question":"Which delivery risk should we address first?","projectId":null,"history":[]}'
+```
+
+The response uses `Content-Type: text/event-stream; charset=utf-8`, disables proxy buffering, and emits these events with monotonically increasing IDs:
+
+- `start`: request ID, response type/source, provider, model, and live/mock mode.
+- `status`: one of `CLASSIFYING`, `GATHERING_CONTEXT`, `ANALYZING`, or `FORMATTING`. These are workflow states, never model reasoning.
+- `delta`: newly generated, user-visible summary text only.
+- `result`: the complete validated `AiResult`.
+- `error`: safe code, message, retryability, and request ID after streaming has begun.
+- `done`: successful completion and request ID.
+
+Each event is encoded as:
+
+```text
+event: delta
+data: {"text":"Newly generated text"}
+id: 3
+
+```
+
+The server sends an ID-free `: ping` heartbeat every 15 seconds. It honors response backpressure and aborts the Anthropic request when the browser disconnects, preventing continued billable generation.
+
+Live analysis uses Anthropic's Messages streaming API with the same structured-output JSON Schema as `/ai/ask`. Raw partial JSON is accumulated privately. A stateful incremental JSON-string decoder emits only newly decoded characters from the first `summary` property and correctly handles escaped quotes, backslashes, control characters, Unicode escapes, and arbitrary chunk boundaries. The complete JSON is parsed, validated, and evidence-checked before `result` is emitted. No thinking blocks, prompts, context, credentials, or raw JSON are streamed.
+
+Mock mode uses the same endpoint and event protocol, emits deterministic summary chunks without artificial delays, returns `mode: "MOCK"`, and uses `responseSource: "SYSTEM"` rather than implying that Claude generated the response.
+
 Claude uses the Messages API with JSON Schema structured output. The server independently validates the result, removes evidence references to entities outside the authorized context, maps upstream failures to safe error codes, and never logs full prompts, questions, context, or responses.
 
 Files use a local disk adapter in development; implement `StorageAdapter` for an S3-compatible provider without changing HTTP handlers.

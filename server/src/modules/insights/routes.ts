@@ -6,12 +6,12 @@ import {
   paginated,
   projectInWorkspace,
 } from "../../common/http.js";
-import { askAssistant } from "../ai/service.js";
 import { env } from "../../config/env.js";
-import { buildAiContext } from "../ai/context.service.js";
 import { aiRequestSchema, aiResponseDataSchema } from "../ai/schemas.js";
 import type { AiIntent, AiRequest } from "../ai/types.js";
 import { AppError } from "../../common/errors/app-error.js";
+import { runAiRequest } from "../ai/orchestrator.js";
+import { handleAiStream } from "../ai/stream-handler.js";
 
 const wid = Type.Object(
   { workspaceId: Type.String({ format: "uuid" }) },
@@ -277,12 +277,11 @@ const routes: FastifyPluginAsync = async (app) => {
       await projectInWorkspace(app.prisma, id, body.projectId);
     const mode = env.aiMock ? "MOCK" : "LIVE";
     try {
-      const context = await buildAiContext(app.prisma, id, body.projectId);
-      const result = await askAssistant(aiRequest, context);
-      request.log.info({ workspaceId: id, projectId: body.projectId ?? null, requestMode: body.question ? "CUSTOM_QUESTION" : aiRequest.intent, model: result.metadata.model, aiMode: result.metadata.mode, latencyMs: result.metadata.latencyMs, inputTokens: result.metadata.inputTokens, outputTokens: result.metadata.outputTokens }, "AI assistant request completed");
+      const { interactionType, result } = await runAiRequest(app.prisma, id, aiRequest);
+      request.log.info({ workspaceId: id, projectId: body.projectId ?? null, interactionType, responseSource: result.responseSource, model: result.metadata.model, aiMode: result.metadata.mode, transport: "JSON", latencyMs: result.metadata.latencyMs, inputTokens: result.metadata.inputTokens, outputTokens: result.metadata.outputTokens }, "AI assistant request completed");
       return data(request, result);
     } catch (error) {
-      request.log.warn({ workspaceId: id, projectId: body.projectId ?? null, requestMode: body.question ? "CUSTOM_QUESTION" : aiRequest.intent, model: env.anthropicModel, aiMode: mode, code: error instanceof AppError ? error.code : "AI_UPSTREAM_ERROR" }, "AI assistant request failed");
+      request.log.warn({ workspaceId: id, projectId: body.projectId ?? null, interactionType: "ANALYSIS", responseSource: env.aiMock ? "SYSTEM" : "CLAUDE", model: env.anthropicModel, aiMode: mode, transport: "JSON", code: error instanceof AppError ? error.code : "AI_UPSTREAM_ERROR" }, "AI assistant request failed");
       throw error;
     }
   };
@@ -293,12 +292,12 @@ const routes: FastifyPluginAsync = async (app) => {
         tags: ["AI"],
         params: wid,
         security: [{ bearerAuth: [] }],
-        response: { 200: Type.Object({ data: Type.Object({ provider: Type.Literal("ANTHROPIC"), model: Type.String(), mode: Type.Union([Type.Literal("LIVE"), Type.Literal("MOCK")]), supportsCustomQuestions: Type.Boolean(), supportsProjectFiltering: Type.Boolean(), supportsFollowUps: Type.Boolean() }), meta: Type.Any() }) },
+        response: { 200: Type.Object({ data: Type.Object({ provider: Type.Literal("ANTHROPIC"), model: Type.String(), mode: Type.Union([Type.Literal("LIVE"), Type.Literal("MOCK")]), supportsCustomQuestions: Type.Boolean(), supportsProjectFiltering: Type.Boolean(), supportsFollowUps: Type.Boolean(), supportsStreaming: Type.Boolean(), streamProtocol: Type.Literal("SSE"), streamEndpoint: Type.String() }), meta: Type.Any() }) },
       },
     },
     async (request) => {
       await app.requireWorkspace(request);
-      return data(request, { provider: "ANTHROPIC", model: env.anthropicModel, mode: env.aiMock ? "MOCK" : "LIVE", supportsCustomQuestions: true, supportsProjectFiltering: true, supportsFollowUps: true });
+      return data(request, { provider: "ANTHROPIC", model: env.anthropicModel, mode: env.aiMock ? "MOCK" : "LIVE", supportsCustomQuestions: true, supportsProjectFiltering: true, supportsFollowUps: true, supportsStreaming: true, streamProtocol: "SSE", streamEndpoint: "/api/v1/workspaces/:workspaceId/ai/stream" });
     },
   );
   app.post(
@@ -333,6 +332,23 @@ const routes: FastifyPluginAsync = async (app) => {
     async (request) => {
       return aiHandler(request, "GENERATE_WEEKLY_UPDATE");
     },
+  );
+  app.post(
+    "/ai/stream",
+    {
+      schema: {
+        tags: ["AI"],
+        summary: "Stream a conversational or analytical AI response over SSE",
+        description: "Authenticated POST SSE stream. Events: start, status, delta, result, error, done. Use streaming fetch rather than EventSource.",
+        params: wid,
+        security: [{ bearerAuth: [] }],
+        body: aiRequestSchema,
+        produces: ["text/event-stream"],
+        response: { 200: Type.String({ description: "Server-sent event stream with monotonically increasing event IDs" }) },
+      },
+      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+    },
+    async (request, reply) => handleAiStream(app, request, reply),
   );
   app.log[env.aiMock ? "warn" : "info"]({ provider: "ANTHROPIC", model: env.anthropicModel, mode: env.aiMock ? "MOCK" : "LIVE" }, `AI assistant is running in ${env.aiMock ? "deterministic mock" : "live Claude"} mode`);
 };

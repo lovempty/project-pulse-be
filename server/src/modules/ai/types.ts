@@ -21,6 +21,10 @@ export type AiEvidence = {
   detail: string;
 };
 
+export type AiInteractionType = 'GREETING' | 'GRATITUDE' | 'HELP' | 'ANALYSIS';
+export type AiResponseType = 'CONVERSATIONAL' | 'ANALYSIS';
+export type AiResponseSource = 'SYSTEM' | 'CLAUDE';
+
 export type AiMetadata = {
   provider: 'ANTHROPIC';
   model: string;
@@ -32,6 +36,8 @@ export type AiMetadata = {
 };
 
 export type AiResult = {
+  responseType: AiResponseType;
+  responseSource: AiResponseSource;
   summary: string;
   highlights: string[];
   risks: string[];
@@ -41,6 +47,15 @@ export type AiResult = {
   generatedAt: string;
   metadata: AiMetadata;
 };
+
+export type AiStreamStage = 'CLASSIFYING' | 'GATHERING_CONTEXT' | 'ANALYZING' | 'FORMATTING';
+export type AiStreamEvent =
+  | { type: 'start'; data: { requestId: string; responseType: AiResponseType; responseSource: AiResponseSource; provider: 'ANTHROPIC'; model: string; mode: 'LIVE' | 'MOCK' } }
+  | { type: 'status'; data: { stage: AiStreamStage; message: string } }
+  | { type: 'delta'; data: { text: string } }
+  | { type: 'result'; data: AiResult }
+  | { type: 'error'; data: { code: string; message: string; retryable: boolean; requestId: string } }
+  | { type: 'done'; data: { requestId: string } };
 
 export type AiContext = {
   workspace: { id: string; name: string; currentDate: string };

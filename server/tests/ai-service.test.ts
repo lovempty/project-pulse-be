@@ -3,6 +3,7 @@ import { askAssistant } from '../src/modules/ai/service.js';
 import { AppError } from '../src/common/errors/app-error.js';
 import type { AiContext } from '../src/modules/ai/types.js';
 import { resolveAiMockMode } from '../src/config/env.js';
+import { streamAnalysis } from '../src/modules/ai/stream.service.js';
 
 const context: AiContext = {
   workspace: { id: 'workspace-1', name: 'Acme Studio', currentDate: '2026-08-18T00:00:00.000Z' },
@@ -72,5 +73,31 @@ describe('Claude AI service', () => {
   it('maps SDK timeouts to a safe gateway timeout', async () => {
     const client = { messages: { create: async () => { throw Object.assign(new Error('request timed out'), { name: 'APIConnectionTimeoutError' }); } } } as any;
     await expect(askAssistant({ intent: 'SUMMARIZE_PROGRESS' }, context, { forceLive: true, client })).rejects.toMatchObject({ code: 'AI_TIMEOUT', statusCode: 504, details: null });
+  });
+
+  it('streams only decoded summary text and validates the final structured result', async () => {
+    const json = JSON.stringify(validOutput);
+    const pieces = [json.slice(0, 13), json.slice(13, 28), json.slice(28, 53), json.slice(53)];
+    const fakeStream = {
+      async *[Symbol.asyncIterator]() {
+        for (const text of pieces) yield { type: 'content_block_delta', delta: { type: 'text_delta', text } };
+      },
+      async finalMessage() { return { stop_reason: 'end_turn', usage: { input_tokens: 90, output_tokens: 45, cache_read_input_tokens: 3 } }; },
+    };
+    let receivedSignal: AbortSignal | undefined;
+    const client = { messages: { stream: (_body: unknown, options: { signal: AbortSignal }) => { receivedSignal = options.signal; return fakeStream; } } } as any;
+    const deltas: string[] = [];
+    const result = await streamAnalysis({ question: 'What is at risk?' }, context, { forceLive: true, client, signal: new AbortController().signal, onDelta: async (text) => { deltas.push(text); } });
+    expect(deltas.join('')).toBe(validOutput.summary);
+    expect(deltas.join('')).not.toContain('{"summary"');
+    expect(result.responseSource).toBe('CLAUDE');
+    expect(result.evidence.map((evidence) => evidence.id)).toEqual(['task-1', null]);
+    expect(receivedSignal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('stops mock streaming immediately when the client signal is aborted', async () => {
+    const controller = new AbortController();
+    controller.abort(new Error('Client disconnected'));
+    await expect(streamAnalysis({ intent: 'IDENTIFY_RISKS' }, context, { signal: controller.signal, onDelta: async () => undefined })).rejects.toThrow('Client disconnected');
   });
 });

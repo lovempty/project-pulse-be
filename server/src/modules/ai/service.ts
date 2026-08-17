@@ -6,23 +6,23 @@ import { AI_SYSTEM_PROMPT, buildUserPrompt } from './prompts.js';
 import { aiOutputJsonSchema, isStructuredAiOutput } from './schemas.js';
 import type { AiContext, AiRequest, AiResult } from './types.js';
 
-type ClaudeClient = Pick<Anthropic, 'messages'>;
-type ServiceOptions = { client?: ClaudeClient; forceLive?: boolean };
+export type ClaudeClient = Pick<Anthropic, 'messages'>;
+export type ServiceOptions = { client?: ClaudeClient; forceLive?: boolean };
 
-function parseOutput(text: string) {
+export function parseAiOutput(text: string) {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
     throw new AppError(502, 'AI_INVALID_RESPONSE', 'The project assistant returned an invalid response');
   }
-  if (!isStructuredAiOutput(parsed) || parsed.followUpQuestions.length < 2 || parsed.followUpQuestions.length > 5) {
+  if (!isStructuredAiOutput(parsed) || parsed.followUpQuestions.length > 5) {
     throw new AppError(502, 'AI_INVALID_RESPONSE', 'The project assistant returned an invalid response');
   }
   return parsed;
 }
 
-function validateEvidence(result: ReturnType<typeof parseOutput>, context: AiContext) {
+export function validateEvidence(result: ReturnType<typeof parseAiOutput>, context: AiContext) {
   const validIds = {
     TASK: new Set(context.tasks.map((task) => task.id)),
     PROJECT: new Set(context.projects.map((project) => project.id)),
@@ -34,7 +34,7 @@ function validateEvidence(result: ReturnType<typeof parseOutput>, context: AiCon
   });
 }
 
-function mapClaudeError(cause: unknown): never {
+export function mapClaudeError(cause: unknown): never {
   if (cause instanceof AppError) throw cause;
   if (cause instanceof Anthropic.RateLimitError || (cause as { status?: number })?.status === 429) {
     throw new AppError(429, 'AI_RATE_LIMITED', 'The project assistant is busy. Please retry shortly.');
@@ -65,10 +65,12 @@ export async function askAssistant(request: AiRequest, context: AiContext, optio
     if ('stop_reason' in response && response.stop_reason === 'max_tokens') throw new AppError(502, 'AI_INVALID_RESPONSE', 'The project assistant response was truncated');
     const text = 'content' in response ? response.content.find((block) => block.type === 'text')?.text : undefined;
     if (!text) throw new AppError(502, 'AI_INVALID_RESPONSE', 'The project assistant returned no usable response');
-    const parsed = parseOutput(text);
+    const parsed = parseAiOutput(text);
     const usage = 'usage' in response ? response.usage : undefined;
     return {
       ...parsed,
+      responseType: 'ANALYSIS',
+      responseSource: 'CLAUDE',
       evidence: validateEvidence(parsed, context),
       generatedAt: new Date().toISOString(),
       metadata: {

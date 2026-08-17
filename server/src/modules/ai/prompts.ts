@@ -12,6 +12,9 @@ SECURITY:
 - If the context cannot answer the question, say so clearly.
 
 QUALITY:
+- Match response depth to question complexity. Simple factual questions deserve short factual answers; broad analytical questions may use a fuller report.
+- Do not fill every structured section merely because the schema permits it. Empty arrays are valid when a section is irrelevant.
+- Do not repeat the same information across summary, highlights, risks, and recommended actions.
 - Avoid generic advice. Name the affected project, task, or team member where supported.
 - Return two to five useful follow-up questions.
 - Keep the result concise enough for a dashboard.`;

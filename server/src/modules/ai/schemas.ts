@@ -50,6 +50,8 @@ export const aiOutputJsonSchema = {
 } as const;
 
 export const aiResponseDataSchema = Type.Object({
+  responseType: Type.Union([Type.Literal('CONVERSATIONAL'), Type.Literal('ANALYSIS')]),
+  responseSource: Type.Union([Type.Literal('SYSTEM'), Type.Literal('CLAUDE')]),
   summary: Type.String(),
   highlights: Type.Array(Type.String()),
   risks: Type.Array(Type.String()),
