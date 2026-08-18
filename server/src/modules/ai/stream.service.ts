@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { Anthropic } from '@anthropic-ai/sdk';
 import { env } from '../../config/env.js';
 import { AppError } from '../../common/errors/app-error.js';
 import { createMockResult } from './mock.js';
