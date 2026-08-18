@@ -3,7 +3,7 @@ import core from './plugins/core.js';
 import routes from './routes.js';
 import { env } from './config/env.js';
 
-export async function buildApp(options = {}) {
+export function buildApp(options = {}) {
   const logger = env.nodeEnv === 'test' ? false : env.nodeEnv === 'development'
     ? { level: 'debug', transport: { target: 'pino-pretty' } }
     : { level: 'info' };
@@ -12,7 +12,11 @@ export async function buildApp(options = {}) {
     ajv: { customOptions: { removeAdditional: false, coerceTypes: true, allErrors: true } },
     ...options
   });
-  await app.register(core);
-  await app.register(routes);
+  app.register(core);
+  app.register(routes);
   return app;
 }
+
+const app = buildApp();
+
+export default app;
