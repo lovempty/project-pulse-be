@@ -20,7 +20,7 @@ export function resolveAiMockMode(nodeEnv: string, configuredMode: string | unde
 }
 
 const isVercel = Boolean(process.env.VERCEL);
-const nodeEnv = process.env.NODE_ENV ?? (isVercel ? 'production' : 'development');
+const nodeEnv = isVercel ? 'production' : (process.env.NODE_ENV ?? 'development');
 
 export const env = {
   nodeEnv,
