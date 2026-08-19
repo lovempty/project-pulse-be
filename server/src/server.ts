@@ -1,4 +1,4 @@
-import app from './app.js';
+import app from './application.js';
 import { env } from './config/env.js';
 
 const shutdown = async (signal: string) => { app.log.info({ signal }, 'shutting down'); await app.close(); process.exit(0); };

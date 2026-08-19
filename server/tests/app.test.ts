@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../src/app.js';
+import { buildApp } from '../src/application.js';
 import { AppError } from '../src/common/errors/app-error.js';
 
 describe('HTTP contract', () => {
