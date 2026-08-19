@@ -19,7 +19,8 @@ export function resolveAiMockMode(nodeEnv: string, configuredMode: string | unde
   return explicitlyMocked || (nodeEnv !== 'production' && !apiKey?.trim());
 }
 
-const nodeEnv = process.env.NODE_ENV ?? 'development';
+const isVercel = Boolean(process.env.VERCEL);
+const nodeEnv = process.env.NODE_ENV ?? (isVercel ? 'production' : 'development');
 
 export const env = {
   nodeEnv,
@@ -37,8 +38,8 @@ export const env = {
   aiTimeoutMs: integer('AI_TIMEOUT_MS', 20000),
   aiMaxOutputTokens: integer('AI_MAX_OUTPUT_TOKENS', 1600),
   aiMaxContextTasks: integer('AI_MAX_CONTEXT_TASKS', 250),
-  uploadDir: process.env.UPLOAD_DIR ?? (process.env.VERCEL ? '/tmp/project-pulse-uploads' : './uploads'),
+  uploadDir: process.env.UPLOAD_DIR ?? (isVercel ? '/tmp/project-pulse-uploads' : './uploads'),
   maxUploadSize: integer('MAX_UPLOAD_SIZE', 10 * 1024 * 1024),
   cookieSecure: process.env.COOKIE_SECURE === 'true',
-  isProduction: process.env.NODE_ENV === 'production'
+  isProduction: nodeEnv === 'production'
 } as const;
